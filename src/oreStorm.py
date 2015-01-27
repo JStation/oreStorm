@@ -4,11 +4,7 @@ Two Player Arcade Survival
 (elements of sopwith and lode runner)
 """
 
-import random
-
-import pygame
-
-
+import pygame, random
 
 # --- Global constants ---
 BLACK = (0, 0, 0)
@@ -34,6 +30,9 @@ class GravitySprite(pygame.sprite.Sprite):
     Note: hack implementation -- currently requires rect to be updated by change_y variable"""
     def __init__(self):
         super().__init__()
+
+        # speed vector
+        self.change_y = 0
 
     def calc_gravity(self):
         """ Calculate gravity """
@@ -62,7 +61,6 @@ class AmmoBox(GravitySprite):
 
         #speed vectors
         self.change_x = 0
-        self.change_y = 0
 
     def activate(self, player):
         print("bonus ammo!")
@@ -146,7 +144,6 @@ class Block(GravitySprite):
 
         #speed vectors
         self.change_x = 0
-        self.change_y = 0
 
     def set_fallBehavior(self):
         # assigns fall() to a fallBehavior

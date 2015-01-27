@@ -4,8 +4,10 @@ Two Player Arcade Survival
 (elements of sopwith and lode runner)
 """
 
-import pygame
 import random
+
+import pygame
+
 
 
 # --- Global constants ---
@@ -39,6 +41,57 @@ class GravitySprite(pygame.sprite.Sprite):
             self.change_y = 1
         else:
             self.change_y += .35
+
+class AmmoBox(GravitySprite):
+    """ Ammobox item that adds ammo to planePlayer """
+
+    # --- AmmoBox constants ---
+    AMMOBOX_COLOR = GREEN
+    AMMOBOX_WIDTH = 20
+    AMMOBOX_HEIGHT = 8
+
+    def __init__(self, pos, platform_list):
+        """Constructor, create ammobox image."""
+        super().__init__()
+        self.image = pygame.Surface([self.AMMOBOX_WIDTH, self.AMMOBOX_HEIGHT])
+        self.image.fill(self.AMMOBOX_COLOR)
+        self.rect = self.image.get_rect()
+
+        self.rect.center = pos
+        self.platform_list = platform_list
+
+        #speed vectors
+        self.change_x = 0
+        self.change_y = 0
+
+    def activate(self, player):
+        print("bonus ammo!")
+        player.addAmmo(10)
+
+    def update(self):
+        """move the box"""
+        if self.rect.top > SCREEN_HEIGHT:
+            self.kill()
+            # debug
+            print("box is gone and this should only appear once")
+
+
+        self.calc_gravity()
+
+                # move up/down
+        self.rect.y += self.change_y
+
+        # vertical collision check
+        block_hit_list = pygame.sprite.spritecollide(self, self.platform_list, False)
+        for block in block_hit_list:
+            # Reset position based on the top/bottom of object
+            if self.change_y > 0:
+                self.rect.bottom = block.rect.top
+            elif self.change_y < 0:
+                self.rect.top = block.rect.bottom
+
+            self.change_y = 0
+
 
 class Bullet(pygame.sprite.Sprite):
     """ Bullets fired by players to destroy blocks."""
@@ -141,6 +194,13 @@ class Block(GravitySprite):
         self.rect.x = random.randrange(SCREEN_WIDTH)
         self.set_payload()
 
+    def drop(self, groups, platform_list):
+        if self.payload == 'fuel':
+            print("pickup dropped")
+            p = AmmoBox(self.rect.center, platform_list)
+            for group in groups:
+                group.add(p)
+
     def update(self):
         """ Automatically called when we need to move the block. """
         self.fall() # calls the fall strategy selected on creation
@@ -157,17 +217,23 @@ class PlanePlayer(pygame.sprite.Sprite):
         self.image = pygame.Surface([self.PLANE_WIDTH, self.PLANE_HEIGHT])
         self.image.fill(RED)
         self.rect = self.image.get_rect()
+        self.ammo = 5
 
     def fire(self, groups):
 
-        # debug messages
-        print("fire!")
-        print(pygame.mouse.get_pos())
+        if self.ammo > 0:
+            self.ammo -= 1
+            print("fire! bullets remaining: " + str(self.ammo))
+            # create a new bullet and add to appropriate Sprite groups
+            b = Bullet(pygame.mouse.get_pos())
+            for group in groups:
+                group.add(b)
+        else:
+            print("out of ammo!")
 
-        # create a new bullet and add to appropriate Sprite groups
-        b = Bullet(pygame.mouse.get_pos())
-        for group in groups:
-            group.add(b)
+    def addAmmo(self, num):
+        self.ammo += num
+
 
     def update(self):
         """ Update the player location. """
@@ -363,6 +429,7 @@ class Game(object):
     # In this case, all the data we need
     # to run our game.
     # Sprite lists
+    pickups_list = None
     bullet_list = None
     block_list = None
     all_sprites_list = None
@@ -377,6 +444,7 @@ class Game(object):
         self.score = 0
         self.game_over = False
         # Create sprite lists
+        self.pickups_list = pygame.sprite.Group()
         self.bullet_list = pygame.sprite.Group()
         self.block_list = pygame.sprite.Group()
         self.all_sprites_list = pygame.sprite.Group()
@@ -451,12 +519,16 @@ class Game(object):
             ### DOES THIS WORK? ####
             self.current_level.update()
 
+            # check if a player hit a pickup
+            pickups_hit_list = pygame.sprite.spritecollide(self.player2, self.pickups_list, True)
+            for pickup in pickups_hit_list:
+                pickup.activate(self.player) # add effect to airplayer -- currently poorly named player
+                print("pickup gathered!")
 
             # check if a bullet hit a falling block (kill block and bullet)
-            blocks_hit_list = pygame.sprite.groupcollide(self.bullet_list, self.block_list, True, True)
+            blocks_hit_list = pygame.sprite.groupcollide(self.block_list, self.bullet_list, True, True)
             for block in blocks_hit_list:
-                print("Boom! -- <increment score>")
-                print(self.bullet_list)
+                block.drop([self.pickups_list, self.all_sprites_list], self.current_level.get_platform_list())
 
             # Check if falling block hits a player (game over)
             blocks_hit_list = pygame.sprite.spritecollide(self.player2, self.block_list, False)
@@ -474,8 +546,9 @@ class Game(object):
 
             # See if block hits platform
             blocks_hit_list = pygame.sprite.groupcollide(self.current_level.get_platform_list(), self.block_list, True, False)
-            for block in blocks_hit_list:
-                print("crash!")
+            # debug
+            #for block in blocks_hit_list:
+                # print("crash!")
 
         if len(self.block_list) == 0:
             self.game_over = True

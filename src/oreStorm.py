@@ -208,13 +208,19 @@ class PlanePlayer(pygame.sprite.Sprite):
     # --- Class Constants ---
     PLANE_WIDTH = 20
     PLANE_HEIGHT = 20
+    PLANE_AMMO = 20
+
+    RECOIL_DISTANCE = 10
 
     def __init__(self):
         super().__init__()
         self.image = pygame.Surface([self.PLANE_WIDTH, self.PLANE_HEIGHT])
         self.image.fill(RED)
         self.rect = self.image.get_rect()
-        self.ammo = 5
+        self.ammo = self.PLANE_AMMO
+
+        self.offset_x = 0;
+        self.offset_y = 0;
 
     def fire(self, groups):
 
@@ -225,17 +231,27 @@ class PlanePlayer(pygame.sprite.Sprite):
             b = Bullet(pygame.mouse.get_pos())
             for group in groups:
                 group.add(b)
+            # recoil from shot
+            self.recoil()
         else:
             print("out of ammo!")
 
     def addAmmo(self, num):
         self.ammo += num
 
+    def recoil(self):
+        self.offset_y += self.RECOIL_DISTANCE
 
     def update(self):
         """ Update the player location. """
         pos = pygame.mouse.get_pos()
-        self.rect.center = pos
+        adjustedPos = (pos[0], pos[1] + self.offset_y)
+        self.rect.center = adjustedPos
+
+        if self.offset_y > 0:
+            self.offset_y -= 1
+        else:
+            self.offset_y = 0
 
 
 class GroundPlayer(GravitySprite):
@@ -446,7 +462,7 @@ class Game(object):
         self.block_list = pygame.sprite.Group()
         self.all_sprites_list = pygame.sprite.Group()
         # Create the block sprites
-        for i in range(50):
+        for i in range(20):
             block = Block()
             block.rect.x = random.randrange(SCREEN_WIDTH)
             block.rect.y = random.randrange(-300, SCREEN_HEIGHT)

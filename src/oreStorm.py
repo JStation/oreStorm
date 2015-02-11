@@ -3,6 +3,7 @@ Ore Storm
 Two Player Arcade Survival
 (elements of sopwith and lode runner)
 """
+import os
 
 import pygame, random
 
@@ -225,6 +226,9 @@ class PlanePlayer(pygame.sprite.Sprite):
     def fire(self, groups):
 
         if self.ammo > 0:
+            # play sfx
+            SOUND_PLANE_FIRE.play()
+            # expend ammo
             self.ammo -= 1
             print("fire! bullets remaining: " + str(self.ammo))
             # create a new bullet and add to appropriate Sprite groups
@@ -456,6 +460,10 @@ class Game(object):
     def __init__(self):
         self.score = 0
         self.game_over = False
+
+        # Load Sounds
+        self.load_sounds()
+
         # Create sprite lists
         self.pickups_list = pygame.sprite.Group()
         self.bullet_list = pygame.sprite.Group()
@@ -486,7 +494,12 @@ class Game(object):
         # associate level with player
         self.player2.level = self.current_level
 
-
+    def load_sounds(self):
+        try:
+            global SOUND_PLANE_FIRE
+            SOUND_PLANE_FIRE = pygame.mixer.Sound(os.path.join('data', 'plane_shoot.wav'))
+        except:
+            raise UserWarning("Failed to load sound file in 'data' folder.")
     def process_events(self):
         """ Process all of the events. Return a "True" if we need
         to close the window. """
@@ -583,6 +596,7 @@ class Game(object):
 
 def main():
     """ Main program function. """
+    pygame.mixer.pre_init(22050, -16, 2, 1024)
     # Initialize Pygame and set up the window
     pygame.init()
     size = [SCREEN_WIDTH, SCREEN_HEIGHT]

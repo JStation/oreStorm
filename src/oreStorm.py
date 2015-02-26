@@ -3,9 +3,9 @@ Ore Storm
 Two Player Arcade Survival
 (elements of sopwith and lode runner)
 """
-import os
 
-import pygame, random
+from enum import Enum
+import os, pygame, random
 
 # --- Global constants ---
 BLACK = (0, 0, 0)
@@ -25,6 +25,37 @@ FPS = 60
 
 
 # --- Classes ---
+
+# Spritesheet handling class from pygame cookbook
+class spritesheet(object):
+    def __init__(self, filename):
+        try:
+            self.sheet = pygame.image.load(filename).convert()
+        except pygame.error as message:
+            print('Unable to load spritesheet image:', filename)
+            raise SystemExit(message)
+    # Load a specific image from a specific rectangle
+    def image_at(self, rectangle, colorkey = None):
+        "Loads image from x,y,x+offset,y+offset"
+        rect = pygame.Rect(rectangle)
+        image = pygame.Surface(rect.size).convert()
+        image.blit(self.sheet, (0, 0), rect)
+        if colorkey is not None:
+            if colorkey is -1:
+                colorkey = image.get_at((0,0))
+            image.set_colorkey(colorkey, pygame.RLEACCEL)
+        return image
+    # Load a whole bunch of images and return them as a list
+    def images_at(self, rects, colorkey = None):
+        "Loads multiple images, supply a list of coordinates"
+        return [self.image_at(rect, colorkey) for rect in rects]
+    # Load a whole strip of images
+    def load_strip(self, rect, image_count, colorkey = None):
+        "Loads a strip of images and returns them as a list"
+        tups = [(rect[0]+rect[2]*x, rect[1], rect[2], rect[3])
+                for x in range(image_count)]
+        return self.images_at(tups, colorkey)
+
 
 class GravitySprite(pygame.sprite.Sprite):
     """ Abstract class that implements basic gravity.
@@ -262,10 +293,14 @@ class GroundPlayer(GravitySprite):
     """ Player in control of ground character."""
 
     # -- Class Constants ---
-    PLAYER_WIDTH = 15
-    PLAYER_HEIGHT = 30
-    PLAYER_SPEED = 6
-    PLAYER_JUMP_HEIGHT = 8
+    PLAYER_WIDTH = 32
+    PLAYER_HEIGHT = 32
+    PLAYER_SPEED = 5
+    PLAYER_JUMP_HEIGHT = 6
+
+
+    ANIMATION_FRAMEDELAY = 6
+    ANIM_STATES = Enum('ANIM_STATES', 'STANDING RUNNING_LEFT RUNNING_RIGHT JUMPING FALLING')
 
     # -- Attributes --
     # speed vector of player
@@ -277,9 +312,70 @@ class GroundPlayer(GravitySprite):
 
     def __init__(self):
         super().__init__()
-        self.image = pygame.Surface([self.PLAYER_WIDTH, self.PLAYER_HEIGHT])
-        self.image.fill(BLUE)
+
+        self.playerAnimationState = None
+        self.current_images_list = None
+        self.animation_index = 0
+        self.animation_delay = 0
+
+        ### Load Graphics -- TODO: move this to a load graphics function
+        self.ss = spritesheet(os.path.join('data', 'groundPlayer.png'))
+        self.image = self.ss.image_at((17, 17, 16, 16), colorkey=(157, 142, 135))
+        self.image = pygame.transform.scale(self.image, (self.PLAYER_WIDTH, self.PLAYER_HEIGHT))
+        #self.image = self.ss.image_at((17, 17, 16, 16))
         self.rect = self.image.get_rect()
+
+        self.images_right = self.ss.images_at([(17, 32, 16, 16), (32, 33, 16, 16), (49, 32, 16, 16), (65, 32, 16, 16), (81, 32, 16, 16), (97, 32, 16, 16)], colorkey=(157, 142, 135))
+        self.images_left =[]
+        # scale images
+        for i in range(len(self.images_right[:])):
+            self.images_right[i] = pygame.transform.scale(self.images_right[i], (self.PLAYER_WIDTH, self.PLAYER_HEIGHT))
+            self.images_left.append(pygame.transform.flip(self.images_right[i], True, False))
+
+        self.images_stand = self.ss.images_at([(17, 16, 16, 16), (33, 16, 16, 16), (49, 16, 16, 16), (65, 16, 16, 16)], colorkey=(157, 142, 135))
+        for i in range(len(self.images_stand[:])):
+            self.images_stand[i] = pygame.transform.scale(self.images_stand[i], (self.PLAYER_WIDTH, self.PLAYER_HEIGHT))
+
+    def loadPlayerImages(self, spritesheet):
+        pass
+
+    def updatePlayerImage(self):
+        # display image and advance index
+        # expects animation index to be reset to zero when  current_images_list changes
+        self.image = self.current_images_list[self.animation_index]
+        self.animation_delay += 1
+        if self.animation_delay > self.ANIMATION_FRAMEDELAY:
+            self.animation_index += 1
+            self.animation_delay = 0
+            if self.animation_index >= len(self.current_images_list):
+                self.animation_index = 0
+
+
+    def setPlayerAnimationState(self, playerAnimationState):
+        """update the player state if it's new"""
+        #assert(playerAnimationState
+        if self.playerAnimationState != playerAnimationState:
+            self.playerAnimationState = playerAnimationState
+            self.setCurrentImagesList(playerAnimationState)
+
+            # Debugging printout #
+            print(playerAnimationState)
+        else:
+            return
+
+    def setCurrentImagesList(self, playerAnimationState):
+        """ Also resets the animation index when changing current_images_list
+        """
+        if playerAnimationState == self.ANIM_STATES.STANDING:
+            self.current_images_list = self.images_stand
+        elif playerAnimationState == self.ANIM_STATES.RUNNING_RIGHT:
+            self.current_images_list = self.images_right
+        elif playerAnimationState == self.ANIM_STATES.RUNNING_LEFT:
+            self.current_images_list = self.images_left
+        else:
+            self.current_images_list = self.images_stand
+        self.animation_index = 0
+
 
     def update(self):
         """move the player """
@@ -313,6 +409,10 @@ class GroundPlayer(GravitySprite):
 
             self.change_y = 0
 
+        # check if falling for animation state
+        self.checkIfFalling()
+        self.updatePlayerImage()
+
     def boundary_check(self):
         # check if on the ground
         if self.rect.y >= SCREEN_HEIGHT and self.change_y >= 0:
@@ -330,18 +430,29 @@ class GroundPlayer(GravitySprite):
 
         if len(platform_hit_list) > 0 or self.rect.bottom >= SCREEN_HEIGHT:
             self.change_y = -self.PLAYER_JUMP_HEIGHT
+            self.setPlayerAnimationState(self.ANIM_STATES.JUMPING)
 
     def go_left(self):
         """ move left """
         self.change_x = -self.PLAYER_SPEED
+        self.setPlayerAnimationState(self.ANIM_STATES.RUNNING_LEFT)
 
     def go_right(self):
         """ move right """
         self.change_x = self.PLAYER_SPEED
+        self.setPlayerAnimationState(self.ANIM_STATES.RUNNING_RIGHT)
 
     def stop(self):
         """ called when no input from movement keys """
         self.change_x = 0
+        self.setPlayerAnimationState(self.ANIM_STATES.STANDING)
+
+    def checkIfFalling(self):
+        """ called when player is falling """
+        if self.change_y > 0:
+            self.setPlayerAnimationState(self.ANIM_STATES.FALLING)
+
+
 
 
 class Platform(pygame.sprite.Sprite):
@@ -470,7 +581,7 @@ class Game(object):
         self.block_list = pygame.sprite.Group()
         self.all_sprites_list = pygame.sprite.Group()
         # Create the block sprites
-        for i in range(20):
+        for i in range(5):
             block = Block()
             block.rect.x = random.randrange(SCREEN_WIDTH)
             block.rect.y = random.randrange(-300, SCREEN_HEIGHT)

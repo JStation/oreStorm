@@ -27,6 +27,7 @@ FPS = 60
 # --- Classes ---
 
 # Spritesheet handling class from pygame cookbook
+# modified -- added transforming loop
 class spritesheet(object):
     def __init__(self, filename):
         try:
@@ -55,7 +56,20 @@ class spritesheet(object):
         tups = [(rect[0]+rect[2]*x, rect[1], rect[2], rect[3])
                 for x in range(image_count)]
         return self.images_at(tups, colorkey)
+    # Scale images images in a list
+    def scale_images(self, images_list, width, height):
+        "Returns a list of scaled images"
+        scaled_images = []
+        for i in range(len(images_list)):
+            scaled_images.append(pygame.transform.scale(images_list[i], (width, height)))
+        return scaled_images
 
+    def mirror_images(self, images_list, flipX, flipY):
+        "Returns a list of mirrored images"
+        mirrored_images = []
+        for i in range(len(images_list)):
+            mirrored_images.append(pygame.transform.flip(images_list[i], flipX, flipY))
+        return mirrored_images
 
 class GravitySprite(pygame.sprite.Sprite):
     """ Abstract class that implements basic gravity.
@@ -295,17 +309,15 @@ class GroundPlayer(GravitySprite):
     # -- Class Constants ---
     PLAYER_WIDTH = 32
     PLAYER_HEIGHT = 32
-    PLAYER_SPEED = 5
+    PLAYER_SPEED = 3
     PLAYER_JUMP_HEIGHT = 6
 
-
-    ANIMATION_FRAMEDELAY = 6
-    ANIM_STATES = Enum('ANIM_STATES', 'STANDING RUNNING_LEFT RUNNING_RIGHT JUMPING FALLING')
-
-    # -- Attributes --
-    # speed vector of player
-    change_x = 0
-    change_y = 0
+    PLAYER_SPRITESHEET_FILENAME = 'groundPlayer.png'
+    PLAYER_SPRITESHEET_PATH = 'data'
+    PLAYER_COLORKEY = (157, 142, 135)
+    ANIMATION_FRAMEDELAY = 10
+    ANIM_STATES = Enum('ANIM_STATES', 'ONGROUND JUMPING FALLING STANDING')
+    ANIM_DIRECTIONS = Enum('ANIM_DIRECTIONS', 'LEFT RIGHT')
 
     # list of sprites that block movement
     level = None
@@ -313,31 +325,47 @@ class GroundPlayer(GravitySprite):
     def __init__(self):
         super().__init__()
 
+        self.loadPlayerImages(spritesheet(os.path.join(self.PLAYER_SPRITESHEET_PATH, self.PLAYER_SPRITESHEET_FILENAME)))
+        self.image = self.images_standing_right[0] # initial image for height/width (arbitrary)
+        self.rect = self.image.get_rect()
+
+        # set speed vectors
+        self.change_x = 0
+        self.change_y = 0
+
+
+    def loadPlayerImages(self, spritesheet):
+        # initialize animation variables
         self.playerAnimationState = None
+        self.playerDirectionState = None
         self.current_images_list = None
         self.animation_index = 0
         self.animation_delay = 0
 
-        ### Load Graphics -- TODO: move this to a load graphics function
-        self.ss = spritesheet(os.path.join('data', 'groundPlayer.png'))
-        self.image = self.ss.image_at((17, 17, 16, 16), colorkey=(157, 142, 135))
-        self.image = pygame.transform.scale(self.image, (self.PLAYER_WIDTH, self.PLAYER_HEIGHT))
-        #self.image = self.ss.image_at((17, 17, 16, 16))
-        self.rect = self.image.get_rect()
+        # load Running images
+        self.images_right = spritesheet.images_at([(17, 32, 16, 16), (33, 32, 16, 16), (49, 32, 16, 16), (65, 32, 16, 16), (81, 32, 16, 16), (97, 32, 16, 16)], colorkey=self.PLAYER_COLORKEY)
+        self.images_right = spritesheet.scale_images(self.images_right, self.PLAYER_WIDTH, self.PLAYER_HEIGHT)
+        self.images_left = spritesheet.mirror_images(self.images_right, True, False)
 
-        self.images_right = self.ss.images_at([(17, 32, 16, 16), (32, 33, 16, 16), (49, 32, 16, 16), (65, 32, 16, 16), (81, 32, 16, 16), (97, 32, 16, 16)], colorkey=(157, 142, 135))
-        self.images_left =[]
-        # scale images
-        for i in range(len(self.images_right[:])):
-            self.images_right[i] = pygame.transform.scale(self.images_right[i], (self.PLAYER_WIDTH, self.PLAYER_HEIGHT))
-            self.images_left.append(pygame.transform.flip(self.images_right[i], True, False))
+        # load Standing images
+        self.images_standing_right = spritesheet.images_at([(17, 16, 16, 16), (33, 16, 16, 16), (49, 16, 16, 16), (65, 16, 16, 16)], colorkey=self.PLAYER_COLORKEY)
+        self.images_standing_right = spritesheet.scale_images(self.images_standing_right, self.PLAYER_WIDTH, self.PLAYER_HEIGHT)
+        # arrange the Standing images to include an occasional blinking frame
+        self.blink_image = self.images_standing_right[3]
+        self.images_standing_right = (self.images_standing_right[:3] + self.images_standing_right[1:2]) * 3
+        self.images_standing_right.append(self.blink_image)
+        # copy to left facing strip
+        self.images_standing_left = spritesheet.mirror_images(self.images_standing_right, True, False)
 
-        self.images_stand = self.ss.images_at([(17, 16, 16, 16), (33, 16, 16, 16), (49, 16, 16, 16), (65, 16, 16, 16)], colorkey=(157, 142, 135))
-        for i in range(len(self.images_stand[:])):
-            self.images_stand[i] = pygame.transform.scale(self.images_stand[i], (self.PLAYER_WIDTH, self.PLAYER_HEIGHT))
+        # load Jumping images
+        self.images_jumping_right = spritesheet.images_at([(17, 48, 16, 16)], colorkey=self.PLAYER_COLORKEY)
+        self.images_jumping_right = spritesheet.scale_images(self.images_jumping_right, self.PLAYER_WIDTH, self.PLAYER_HEIGHT)
+        self.images_jumping_left = spritesheet.mirror_images(self.images_jumping_right, True, False)
 
-    def loadPlayerImages(self, spritesheet):
-        pass
+        # load Falling images
+        self.images_falling_right = spritesheet.images_at([(33, 48, 16, 16)], colorkey=self.PLAYER_COLORKEY)
+        self.images_falling_right = spritesheet.scale_images(self.images_falling_right, self.PLAYER_WIDTH, self.PLAYER_HEIGHT)
+        self.images_falling_left = spritesheet.mirror_images(self.images_falling_right, True, False)
 
     def updatePlayerImage(self):
         # display image and advance index
@@ -351,29 +379,49 @@ class GroundPlayer(GravitySprite):
                 self.animation_index = 0
 
 
-    def setPlayerAnimationState(self, playerAnimationState):
+    def setPlayerAnimationState(self, playerAnimationState, playerDirectionState):
         """update the player state if it's new"""
         #assert(playerAnimationState
         if self.playerAnimationState != playerAnimationState:
+            print("DEBUG: state mismatch! " + str(self.playerAnimationState) + " does not equal " + str(playerAnimationState))
             self.playerAnimationState = playerAnimationState
-            self.setCurrentImagesList(playerAnimationState)
+            self.setCurrentImagesList(playerAnimationState, playerDirectionState)
 
-            # Debugging printout #
-            print(playerAnimationState)
-        else:
-            return
+        if self.playerDirectionState != playerDirectionState:
+            print("DEBUG: direction mismatch! " + str(self.playerDirectionState) + " does not equal " + str(playerDirectionState))
+            self.playerDirectionState = playerDirectionState
+            self.setCurrentImagesList(playerAnimationState, playerDirectionState)
 
-    def setCurrentImagesList(self, playerAnimationState):
+    def setCurrentImagesList(self, playerAnimationState, playerDirectionState):
         """ Also resets the animation index when changing current_images_list
         """
-        if playerAnimationState == self.ANIM_STATES.STANDING:
-            self.current_images_list = self.images_stand
-        elif playerAnimationState == self.ANIM_STATES.RUNNING_RIGHT:
-            self.current_images_list = self.images_right
-        elif playerAnimationState == self.ANIM_STATES.RUNNING_LEFT:
-            self.current_images_list = self.images_left
+        if playerAnimationState == self.ANIM_STATES.ONGROUND:
+            if self.playerDirectionState == self.ANIM_DIRECTIONS.LEFT:
+                self.current_images_list = self.images_left
+            else:
+                self.current_images_list = self.images_right
+
+        elif playerAnimationState == self.ANIM_STATES.STANDING:
+            if self.playerDirectionState == self.ANIM_DIRECTIONS.LEFT:
+                self.current_images_list = self.images_standing_left
+            else:
+                self.current_images_list = self.images_standing_right
+
+        elif playerAnimationState == self.ANIM_STATES.JUMPING:
+            if self.playerDirectionState == self.ANIM_DIRECTIONS.LEFT:
+                self.current_images_list = self.images_jumping_left
+            else:
+                self.current_images_list = self.images_jumping_right
+
+
+        elif playerAnimationState == self.ANIM_STATES.FALLING:
+            if self.playerDirectionState == self.ANIM_DIRECTIONS.LEFT:
+                self.current_images_list = self.images_falling_left
+            else:
+                self.current_images_list = self.images_falling_right
         else:
-            self.current_images_list = self.images_stand
+            self.current_images_list = self.images_standing_right
+        # reset the animation index to start new action from beginning
         self.animation_index = 0
 
 
@@ -410,7 +458,7 @@ class GroundPlayer(GravitySprite):
             self.change_y = 0
 
         # check if falling for animation state
-        self.checkIfFalling()
+        self.checkAnimationState()
         self.updatePlayerImage()
 
     def boundary_check(self):
@@ -430,29 +478,47 @@ class GroundPlayer(GravitySprite):
 
         if len(platform_hit_list) > 0 or self.rect.bottom >= SCREEN_HEIGHT:
             self.change_y = -self.PLAYER_JUMP_HEIGHT
-            self.setPlayerAnimationState(self.ANIM_STATES.JUMPING)
 
     def go_left(self):
         """ move left """
         self.change_x = -self.PLAYER_SPEED
-        self.setPlayerAnimationState(self.ANIM_STATES.RUNNING_LEFT)
 
     def go_right(self):
         """ move right """
         self.change_x = self.PLAYER_SPEED
-        self.setPlayerAnimationState(self.ANIM_STATES.RUNNING_RIGHT)
 
     def stop(self):
         """ called when no input from movement keys """
         self.change_x = 0
-        self.setPlayerAnimationState(self.ANIM_STATES.STANDING)
 
-    def checkIfFalling(self):
-        """ called when player is falling """
+    def checkAnimationState(self):
+        """ Called to set current AnimationState """
+        animationState = self.playerAnimationState
+        directionState = self.playerDirectionState
+
+
+
+
+        # Animation state
         if self.change_y > 0:
-            self.setPlayerAnimationState(self.ANIM_STATES.FALLING)
+            animationState = self.ANIM_STATES.FALLING
+        elif self.change_y < 0:
+            animationState = self.ANIM_STATES.JUMPING
+        else:
+            animationState = self.ANIM_STATES.ONGROUND
 
+        # Directional State
+        if self.change_x > 0:
+            directionState = self.ANIM_DIRECTIONS.RIGHT
+        elif self.change_x < 0:
+            directionState = self.ANIM_DIRECTIONS.LEFT
 
+        # Check if standing still
+        if self.change_x == 0 and animationState == self.ANIM_STATES.ONGROUND:
+            animationState = self.ANIM_STATES.STANDING
+
+        # set the states
+        self.setPlayerAnimationState(animationState, directionState)
 
 
 class Platform(pygame.sprite.Sprite):

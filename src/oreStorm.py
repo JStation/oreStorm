@@ -4,7 +4,7 @@ Two Player Arcade Survival
 (elements of sopwith and lode runner)
 """
 
-from enum import Enum
+from enum import Enum, IntEnum
 import os, pygame, random
 
 # --- Global constants ---
@@ -23,12 +23,51 @@ BACKGROUNDCOLOR = WHITE
 
 FPS = 60
 
+# --- Game Resources ---
+SOUND_DATAPATH = 'data'
+SOUNDS = IntEnum("SOUNDS", "PLANE_FIRE PICKUP_AMMO")
+#SOUNDS = IntEnum("SOUNDS", "PLANE_FIRE PLANE_COLLIDE PLAYER_JUMP PLAYER_DIE BLOCK_CRASH BLOCK_DIE")
+
 
 # --- Classes ---
 
+# Audio System
+class StandardAudio(object):
+    # TODO -- improve soundfile loading and playing using LocatorService to allow in-game muting/unmuting --
+
+    def __init__(self):
+        self.loadAudioFiles()
+
+    def play(self, audioID):
+        try:
+            index = int(audioID) - 1 # offset index as Enum starts at 1
+            self.sounds[index].play()
+        except:
+            print("failed to play sound: %s." % str(audioID.name))
+
+    def loadAudioFiles(self):
+        self.sounds = []
+        for item in SOUNDS:
+            try:
+                sound = pygame.mixer.Sound(os.path.join(SOUND_DATAPATH, str(item.name)+'.wav'))
+                self.sounds.append(sound)
+
+            except:
+                print(str(item.name)+'.wav')
+                raise UserWarning("Failed to load sound file in %s folder." % SOUND_DATAPATH)
+
+
+class NullAudio(object):
+    def __init__(self):
+        # Debug print
+        print("INFO: NullAudio initialized -- sound's muted!")
+
+    def play(self, audioID):
+        pass
+
 # Spritesheet handling class from pygame cookbook
 # modified -- added transforming loop
-class spritesheet(object):
+class Spritesheet(object):
     def __init__(self, filename):
         try:
             self.sheet = pygame.image.load(filename).convert()
@@ -110,6 +149,7 @@ class AmmoBox(GravitySprite):
 
     def activate(self, player):
         print("bonus ammo!")
+        audioSystem.play(SOUNDS.PICKUP_AMMO)
         player.addAmmo(10)
 
     def update(self):
@@ -272,7 +312,8 @@ class PlanePlayer(pygame.sprite.Sprite):
 
         if self.ammo > 0:
             # play sfx
-            SOUND_PLANE_FIRE.play()
+            # TODO -- configure AudioLocator to play sound
+            audioSystem.play(SOUNDS.PLANE_FIRE)
             # expend ammo
             self.ammo -= 1
             print("fire! bullets remaining: " + str(self.ammo))
@@ -325,7 +366,7 @@ class GroundPlayer(GravitySprite):
     def __init__(self):
         super().__init__()
 
-        self.loadPlayerImages(spritesheet(os.path.join(self.PLAYER_SPRITESHEET_PATH, self.PLAYER_SPRITESHEET_FILENAME)))
+        self.loadPlayerImages(Spritesheet(os.path.join(self.PLAYER_SPRITESHEET_PATH, self.PLAYER_SPRITESHEET_FILENAME)))
         self.image = self.images_standing_right[0] # initial image for height/width (arbitrary)
         self.rect = self.image.get_rect()
 
@@ -672,11 +713,10 @@ class Game(object):
         self.player2.level = self.current_level
 
     def load_sounds(self):
-        try:
-            global SOUND_PLANE_FIRE
-            SOUND_PLANE_FIRE = pygame.mixer.Sound(os.path.join('data', 'plane_shoot.wav'))
-        except:
-            raise UserWarning("Failed to load sound file in 'data' folder.")
+        global audioSystem # TODO replace direct call to audioSystem with audioLocator.provide()?
+        audioSystem = StandardAudio()
+        #audioSystem = NullAudio() # mute sound
+
     def process_events(self):
         """ Process all of the events. Return a "True" if we need
         to close the window. """

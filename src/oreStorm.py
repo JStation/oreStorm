@@ -261,7 +261,7 @@ class Block(GravitySprite):
 
     def set_payload(self):
         "determine what the box contains"
-        if random.randint(1,100) > 95:
+        if random.randint(1,100) > 50:
             self.payload = random.choice(self.PAYLOADS)
             if self.payload == 'bomb':
                 self.image.fill(RED)
@@ -269,6 +269,7 @@ class Block(GravitySprite):
                 self.image.fill(GREEN)
         else:
             self.payload = None
+            self.image.fill(BLACK)
 
     def reset_pos(self):
         """ Called when the block is 'collected' or falls off
